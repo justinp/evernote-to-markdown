@@ -97,11 +97,9 @@ object Converter {
         else {
           // Figure out how many columns there are by looking ahead at the first row...
           val columnCount = ((e \\ "tr").head \\ "td").size
-          Block.combine(Iterable(
-            Block(Iterable(
-              Inline("|" + "|" * columnCount),
-              Inline("|" + "-|" * columnCount)
-            )),
+          Output.combine(Iterable(
+            Block(Iterable(Inline("|" + "|" * columnCount))),
+            Block(Iterable(Inline("|" + "-|" * columnCount))),
             children(e)
           ))
         }

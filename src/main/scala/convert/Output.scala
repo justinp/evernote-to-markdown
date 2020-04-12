@@ -2,6 +2,7 @@ package convert
 
 
 sealed trait Output {
+  def ++(that: Output): Output
   def :+(that: Inline): Output
   def +:(that: Inline): Output
   def wrap(that: Inline): Output = that +: this :+ that
@@ -11,19 +12,15 @@ sealed trait Output {
 
 object Output {
   val empty: Output = Inline.empty
-  def combine(in: Iterable[Output]): Output = {
-    val inlines = in collect { case i: Inline => i }
-    if ( inlines.size == in.size )
-      Inline.combine(inlines)
-    else {
-      // Turn all children into blocks and fold
-      Block.combine(in.map(_.blockify))
-    }
-  }
+  def combine(in: Iterable[Output]): Output = in.foldLeft[Output](Inline.empty)(_ ++ _)
 }
 
 
 final case class Inline(text: String) extends Output {
+  def ++(that: Output): Output = that match {
+    case b: Block => this +: b
+    case i: Inline => this +: i
+  }
   override def :+(that: Inline): Inline = Inline(this.text ++ that.text)
   override def +:(that: Inline): Inline = Inline(that.text ++ this.text)
   override def blockify: Block = Block(Iterable(this))
@@ -37,7 +34,10 @@ object Inline {
 
 
 final case class Block(children: Iterable[Inline]) extends Output {
-  def ++(that: Block): Block = Block(this.children ++ that.children)
+  def ++(that: Output): Block = that match {
+    case b: Block => Block(this.children ++ b.children)
+    case i: Inline => this :+ i
+  }
 
   override def :+(that: Inline): Block =
     if ( children.isEmpty )
