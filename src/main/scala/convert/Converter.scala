@@ -64,8 +64,9 @@ object Converter {
   private val ignoreTags = Set("en-note", "table", "colgroup", "col", "tbody", "dd", "font", "acronym")
 
   // If this is set, tables will just be copied verbatim, which is technically legal markdown. If you don't set this,
-  // they'll be turned into markdown which can lose a lot of formatting (including not really being a table if there's
-  // not a header.
+  // they'll be turned into markdown which makes them easier to edit, but can lose formatting. We have to just add
+  // an empty header because markdown requires one and evernote never puts on in.
+
   private val htmlTables = false
 
   private def toOutput(in: Node)(implicit resources: Map[String, Resource]): Output =
@@ -90,7 +91,21 @@ object Converter {
       case e: Elem if e.label == "h6" => Inline("###### ") +: children(e)
       case e: Elem if e.label == "blockquote" => Inline("> ") +: children(e)
 
-      case e: Elem if e.label == "table" && htmlTables => Block(Iterable(Inline(e.toString)))
+      case e: Elem if e.label == "table" =>
+        if ( htmlTables )
+          Block(Iterable(Inline(e.toString)))
+        else {
+          // Figure out how many columns there are by looking ahead at the first row...
+          val columnCount = ((e \\ "tr").head \\ "td").size
+          Block.combine(Iterable(
+            Block(Iterable(
+              Inline("|" + "|" * columnCount),
+              Inline("|" + "-|" * columnCount)
+            )),
+            children(e)
+          ))
+        }
+
 
       case e: Elem if e.label == "span" =>
         // All we pick out of spans is bold or italic. We ignore the size and color info (and everything else).
