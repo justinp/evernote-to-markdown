@@ -174,58 +174,59 @@ object Converter {
       skipTitles(title)
     }
 
-    // Write all the timestamps to a MacOS script. We can't do this from scala directly because it's OS-specific.
-    val timeCommands =
+    // Write all the notes to individual markdown files save the timestamp info for later.
+    val timestamps =
       notesToWrite map { c =>
         val title = (c \ "title").text
         val created = timestampParser.parse((c \ "created").text)
         val updated = timestampParser.parse((c \ "updated").text)
-        s"SetFile -m '${setFileTimestampFormat.format(updated)}' -d '${setFileTimestampFormat.format(created)}' '$title.md'"
+
+        val tags = (c \ "tag").map(_.text.replaceAll("\\s+", "-"))
+        val resources = (c \ "resource").map(decodeResource).toMap
+        val content = (c \ "content").text
+
+//        println("=" * 120)
+//        println(content)
+
+        // This was stored in CDATA, so it needs to be parsed again.
+        val contentXml = XML.loadString(content)
+
+        resources.values foreach { r =>
+          writeBytesToFile(s"$outDir/${r.filename}", r.bytes, true)
+        }
+
+        val filename = {
+          val basename = title.replaceAll("/", "-")
+          Stream.from(0).map {
+            case 0 => s"$outDir/$basename.md"
+            case n => s"$outDir/$basename ($n).md"
+          }.find(f => ! new File(f).exists()).get
+        }
+
+        writeToFile(filename) { w =>
+          w.println(tags.map("#" + _).mkString(" "))
+          w.println()
+          w.println("# " + title)
+          w.println()
+          w.println(toMarkdown(toOutput(contentXml)(resources)))
+          w.println()
+          w.println("---")
+          w.println(s"_created: ${iso8601TimestampFormat.format(created)}_")
+          w.println(s"_updated: ${iso8601TimestampFormat.format(updated)}_")
+        }
+
+        (filename, created, updated)
       }
-    writeToFile(s"$outDir/set_timestamps.sh") { w =>
-      timeCommands.foreach(w.println)
-    }
 
-    // Write all the notes to individual
-    notesToWrite foreach { c =>
-      val title = (c \ "title").text
-      val created = timestampParser.parse((c \ "created").text)
-      val updated = timestampParser.parse((c \ "updated").text)
-
-      val tags = (c \ "tag").map(_.text.replaceAll("\\s+", "-"))
-      val resources = (c \ "resource").map(decodeResource).toMap
-      val content = (c \ "content").text
-
-//      println("=" * 120)
-//      println(content)
-
-      // This was stored in CDATA, so it needs to be parsed again.
-      val contentXml = XML.loadString(content)
-
-      resources.values foreach { r =>
-        writeBytesToFile(s"$outDir/${r.filename}", r.bytes, true)
+      // Write all the timestamps to a MacOS script. We can't do this from scala directly because it's OS-specific.
+      writeToFile(s"$outDir/set_timestamps.sh") { w =>
+        val timestampCommands =
+          timestamps map { case (filename, created, updated) =>
+            val escapedFilename = filename.replaceAllLiterally("\"", "\\\"")
+            s"""SetFile -m "${setFileTimestampFormat.format(updated)}" -d "${setFileTimestampFormat.format(created)}" "$escapedFilename""""
+          }
+        timestampCommands.foreach(w.println)
       }
-
-      val filename = {
-        val basename = title.replaceAll("/", "-")
-        Stream.from(0).map {
-          case 0 => s"$outDir/$basename.md"
-          case n => s"$outDir/$basename ($n).md"
-        }.find(f => ! new File(f).exists()).get
-      }
-
-      writeToFile(filename) { w =>
-        w.println(tags.map("#" + _).mkString(" "))
-        w.println()
-        w.println("# " + title)
-        w.println()
-        w.println(toMarkdown(toOutput(contentXml)(resources)))
-        w.println()
-        w.println("---")
-        w.println(s"_created: ${iso8601TimestampFormat.format(created)}_")
-        w.println(s"_updated: ${iso8601TimestampFormat.format(updated)}_")
-      }
-    }
   }
 
   def main(args: Array[String]): Unit = convert(args(0), args(1))
