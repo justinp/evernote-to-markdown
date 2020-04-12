@@ -26,7 +26,7 @@ object Converter {
     e.child.collect { case li: Elem if li.label == "li" => children(li) }
 
   private def indent(o: Output) = o match {
-    case i: Inline => Inline("  ") :+ i
+    case i: Inline => Inline("  ") ++ i
     case b: Block => Block(b.children.map(Inline("  ") +: _))
   }
 
@@ -61,7 +61,7 @@ object Converter {
     hash -> Resource(filename, bytes)
   }
 
-  private val ignoreTags = Set("en-note", "table", "colgroup", "col", "tbody", "dd", "font", "acronym")
+  private val ignoreTags = Set("en-note", "table", "colgroup", "col", "tbody", "dd", "font", "acronym", "code")
 
   // If this is set, tables will just be copied verbatim, which is technically legal markdown. If you don't set this,
   // they'll be turned into markdown which makes them easier to edit, but can lose formatting. We have to just add
@@ -73,33 +73,34 @@ object Converter {
     in match {
       case Text(s) => Inline(s)
       case Group(children) => childNodes(children)
-      case e: Elem if e.label == "div" => children(e).blockify
-      case e: Elem if e.label == "p" => children(e).blockify
-      case e: Elem if e.label == "br" => Block(Iterable(Inline("")))
-      case e: Elem if e.label == "hr" => Block(Iterable(Inline("---")))
+      case e: Elem if e.label == "div" => children(e).toBlock
+      case e: Elem if e.label == "p" => children(e).toBlock
+      case e: Elem if e.label == "br" => Block("")
+      case e: Elem if e.label == "hr" => Block("---")
       case e: Elem if e.label == "b" => embolden(children(e))
       case e: Elem if e.label == "strong" => embolden(children(e))
       case e: Elem if e.label == "em" => italicize(children(e))
       case e: Elem if e.label == "i" => italicize(children(e))
       case e: Elem if e.label == "sup" => children(e).wrap(Inline("^"))
       case e: Elem if e.label == "sub" => children(e).wrap(Inline("~"))
-      case e: Elem if e.label == "h1" => Inline("# ") +: children(e)
-      case e: Elem if e.label == "h2" => Inline("## ") +: children(e)
-      case e: Elem if e.label == "h3" => Inline("### ") +: children(e)
-      case e: Elem if e.label == "h4" => Inline("#### ") +: children(e)
-      case e: Elem if e.label == "h5" => Inline("##### ") +: children(e)
-      case e: Elem if e.label == "h6" => Inline("###### ") +: children(e)
-      case e: Elem if e.label == "blockquote" => Inline("> ") +: children(e)
+      case e: Elem if e.label == "h1" => Inline("# ") ++ children(e)
+      case e: Elem if e.label == "h2" => Inline("## ") ++ children(e)
+      case e: Elem if e.label == "h3" => Inline("### ") ++ children(e)
+      case e: Elem if e.label == "h4" => Inline("#### ") ++ children(e)
+      case e: Elem if e.label == "h5" => Inline("##### ") ++ children(e)
+      case e: Elem if e.label == "h6" => Inline("###### ") ++ children(e)
+      case e: Elem if e.label == "blockquote" => Inline("> ") ++ children(e)
+      case e: Elem if e.label == "pre" => children(e).wrap(Block("```"))
 
       case e: Elem if e.label == "table" =>
         if ( htmlTables )
-          Block(Iterable(Inline(e.toString)))
+          Block(e.toString)
         else {
           // Figure out how many columns there are by looking ahead at the first row...
           val columnCount = ((e \\ "tr").head \\ "td").size
           Output.combine(Iterable(
-            Block(Iterable(Inline("|" + "|" * columnCount))),
-            Block(Iterable(Inline("|" + "-|" * columnCount))),
+            Block("|" + "|" * columnCount),
+            Block("|" + "-|" * columnCount),
             children(e)
           ))
         }
@@ -114,28 +115,28 @@ object Converter {
         maybeItalicized
 
       case e: Elem if e.label == "tr" =>
-        val tds = e.child.collect { case td: Elem if td.label == "td" => children(td).inlinify }
-        Inline.combine(intersperse(tds, Inline("|")))
+        val tds = e.child.collect { case td: Elem if td.label == "td" => children(td).toInline }
+        Output.combine(intersperse(tds, Inline("|")))
 
       case e: Elem if e.label == "ol" =>
-        indent(Output.combine(listItems(e).map(Inline("1. ") +: _)))
+        indent(Output.combine(listItems(e).map(Inline("1. ") ++ _)))
 
       case e: Elem if e.label == "ul" =>
-        indent(Output.combine(listItems(e).map(Inline("* ") +: _).map(_.blockify)))
+        indent(Output.combine(listItems(e).map(Inline("* ") ++ _).map(_.toBlock)))
 
       case e: Elem if e.label == "dl" =>
-        indent(Output.combine(listItems(e).map(Inline("*. ") +: _)))
+        indent(Output.combine(listItems(e).map(Inline("*. ") ++ _)))
 
       case e: Elem if e.label == "en-todo" =>
         if ( e.attributes("checked").text.toBoolean )
-          Inline("- [x] ") +: children(e)
+          Inline("- [x] ") ++ children(e)
         else
-          Inline("- [ ] ") +: children(e)
+          Inline("- [ ] ") ++ children(e)
 
       case e: Elem if e.label == "a" =>
         val text = children(e)
         val href = attr(e, "href").getOrElse("")
-        Inline("[") +: text :+ Inline(s"]($href)")
+        Inline("[") ++ text ++ Inline(s"]($href)")
 
       case e: Elem if e.label == "en-media" =>
         val hash = attr(e, "hash").getOrElse("")
