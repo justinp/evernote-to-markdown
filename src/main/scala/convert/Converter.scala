@@ -91,6 +91,7 @@ object Converter {
       case e: Elem if e.label == "h6" => Inline("###### ") ++ children(e)
       case e: Elem if e.label == "blockquote" => Inline("> ") ++ children(e)
       case e: Elem if e.label == "pre" => children(e).wrap(Block("```"))
+      case e: Elem if e.label == "u" => Inline("<u>") ++ children(e) ++ Inline("</u>")
 
       case e: Elem if e.label == "table" =>
         if ( htmlTables )
