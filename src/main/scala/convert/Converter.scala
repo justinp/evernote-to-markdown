@@ -22,12 +22,28 @@ object Converter {
   private def childNodes(nodes: Seq[Node])(implicit resources: Map[String, Resource]): Output =
     Output.combine(nodes.map(toOutput(_)))
 
-  private def listItems(e: Elem)(implicit resources: Map[String, Resource]) =
-    e.child.collect { case li: Elem if li.label == "li" => children(li) }
+  private def listItems(e: Elem, prefix: String)(implicit resources: Map[String, Resource]): Output = {
+    val mapped =
+      e.child.map {
+        case li: Elem if li.label == "li" =>
+          val c = children(li)
+          val d = Inline(prefix) +: c
+          d
+        case other => toOutput(other)
+      }
+
+    val blocks = mapped.map(_.toBlock)
+
+    val filtered = blocks.filterNot(_.isWhitespaceOnly) ++ Seq(Block.empty)
+
+    val combined = Output.combine(filtered)
+
+    indent(combined)
+  }
 
   private def indent(o: Output) = o match {
-    case i: Inline => Inline("  ") ++ i
-    case b: Block => Block(b.children.map(Inline("  ") +: _))
+    case i: Inline => Inline("   ") ++ i
+    case b: Block => Block(b.children.map(Inline("   ") +: _))
   }
 
   private def attr(e: Elem, name: String): Option[String] =
@@ -71,6 +87,7 @@ object Converter {
 
   private def toOutput(in: Node)(implicit resources: Map[String, Resource]): Output =
     in match {
+      case Text(s) if s.trim.isEmpty => Inline.empty
       case Text(s) => Inline(s)
       case Group(children) => childNodes(children)
       case e: Elem if e.label == "div" => children(e).toBlock
@@ -101,11 +118,10 @@ object Converter {
           val columnCount = ((e \\ "tr").head \\ "td").size
           Output.combine(Iterable(
             Block("|" + "|" * columnCount),
-            Block("|" + "-|" * columnCount),
+            Block("|" + ("-|" * columnCount)),
             children(e)
           ))
         }
-
 
       case e: Elem if e.label == "span" =>
         // All we pick out of spans is bold or italic. We ignore the size and color info (and everything else).
@@ -117,16 +133,16 @@ object Converter {
 
       case e: Elem if e.label == "tr" =>
         val tds = e.child.collect { case td: Elem if td.label == "td" => children(td).toInline }
-        Output.combine(intersperse(tds, Inline("|")))
+        Output.combine(intersperse(tds, Inline("|"))).toBlock
 
       case e: Elem if e.label == "ol" =>
-        indent(Output.combine(listItems(e).map(Inline("1. ") ++ _)))
+        listItems(e, "1. ")
 
       case e: Elem if e.label == "ul" =>
-        indent(Output.combine(listItems(e).map(Inline("* ") ++ _).map(_.toBlock)))
+        listItems(e, "* ")
 
       case e: Elem if e.label == "dl" =>
-        indent(Output.combine(listItems(e).map(Inline("*. ") ++ _)))
+        listItems(e, "* ")
 
       case e: Elem if e.label == "en-todo" =>
         if ( e.attributes("checked").text.toBoolean )
@@ -137,7 +153,7 @@ object Converter {
       case e: Elem if e.label == "a" =>
         val text = children(e)
         val href = attr(e, "href").getOrElse("")
-        Inline("[") ++ text ++ Inline(s"]($href)")
+        Inline("[") ++ text.toInline ++ Inline(s"]($href)")
 
       case e: Elem if e.label == "en-media" =>
         val hash = attr(e, "hash").getOrElse("")
